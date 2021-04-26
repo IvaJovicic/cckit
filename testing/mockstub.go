@@ -3,7 +3,11 @@ package testing
 import (
 	"container/list"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -12,6 +16,7 @@ import (
 	"github.com/hyperledger/fabric-chaincode-go/shimtest"
 	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
 	"github.com/hyperledger/fabric-protos-go/peer"
+	pb "github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/msp"
 	gologging "github.com/op/go-logging"
 	"github.com/pkg/errors"
@@ -555,4 +560,292 @@ func (stub *MockStub) GetPrivateDataByPartialCompositeKey(collection, objectType
 		return nil, err
 	}
 	return NewPrivateMockStateRangeQueryIterator(stub, collection, partialCompositeKey, partialCompositeKey+string(maxUnicodeRuneValue)), nil
+}
+
+// ############################# ADDED
+
+type MockStateQueryResultIterator struct {
+	Closed  bool
+	Stub    *MockStub
+	Current *list.Element
+}
+
+func NewMockStateQueryResultIterator(stub *MockStub, collection list.List) *MockStateQueryResultIterator {
+	iter := new(MockStateQueryResultIterator)
+	iter.Closed = false
+	iter.Stub = stub
+	iter.Current = collection.Front()
+	return iter
+}
+
+func (iter *MockStateQueryResultIterator) Close() error {
+	if iter.Closed {
+		err := errors.New("MockStateQueryResultIterator.Close() called after Close()")
+		mockLogger.Errorf("%+v", err)
+		return err
+	}
+
+	iter.Closed = true
+	return nil
+}
+
+// HasNext returns true if the query iterator contains additional keys and values.
+func (iter *MockStateQueryResultIterator) HasNext() bool {
+	if iter.Closed {
+		mockLogger.Debug("HasNext() but already closed")
+		return false
+	}
+
+	if iter.Current == nil {
+		mockLogger.Error("HasNext() couldn't get Current")
+		return false
+	}
+
+	return iter.Current != nil
+}
+
+// Next returns the next key and value in the range query iterator.
+func (iter *MockStateQueryResultIterator) Next() (*queryresult.KV, error) {
+	if iter.Closed {
+		err := errors.New("MockStateQueryResultIterator.Next() called after Close()")
+		mockLogger.Errorf("%+v", err)
+		return nil, err
+	}
+
+	if !iter.HasNext() {
+		err := errors.New("MockStateQueryResultIterator.Next() called when it does not HaveNext()")
+		mockLogger.Errorf("%+v", err)
+		return nil, err
+	}
+
+	for iter.Current != nil {
+		currentElem := iter.Current.Value.(map[string]interface{})
+		currentValueBytes, err := json.Marshal(currentElem["key"])
+		if err != nil {
+			err := errors.New("MockStateQueryResultIterator.Next() error reading data")
+			mockLogger.Errorf("%+v", err)
+			return nil, err
+		}
+		iter.Current = iter.Current.Next()
+		return &queryresult.KV{Key: string(currentValueBytes), Value: currentElem["value"].([]byte)}, nil
+	}
+
+	err := errors.New("MockStateQueryResultIterator.Next() went past end of range")
+	mockLogger.Errorf("%+v", err)
+	return nil, err
+}
+
+// Affiliate
+type DocType string
+
+const (
+	AFFILIATE DocType = "Affiliate"
+)
+
+type Affiliate struct {
+	AffiliateID string  `json:"affiliateID"`
+	CreatedAt   string  `json:"creastedAt"`
+	Path        string  `json:"path"`
+	ParentID    string  `json:"parentID"`
+	DocType     DocType `json:"docType"`
+}
+
+type Model interface {
+	query(selectorKey string, selectorValue interface{})
+	order(orderKey string, collection list.List)
+}
+
+func IsString(data interface{}) bool {
+	return reflect.TypeOf(data).Kind() == reflect.String
+}
+
+func IsMap(data interface{}) bool {
+	return reflect.TypeOf(data).Kind() == reflect.Map
+}
+
+func ValidateProperty(selectorValue interface{}, originalValue interface{}) (bool, error) {
+	if !IsMap(selectorValue) {
+		// Selector property is NOT object
+		return originalValue == selectorValue, nil
+	}
+
+	// Selector property is object
+	selectorValueMap := selectorValue.(map[string]interface{})
+
+	// Validate regex selector
+	if regexValue, ok := selectorValueMap["$regex"]; ok {
+		regex := regexp.MustCompile(regexValue.(string))
+		return regex.MatchString(originalValue.(string)), nil
+	}
+
+	// Validate equals selector
+	if equalsValue, ok := selectorValueMap["$eq"]; ok {
+		return originalValue == equalsValue, nil
+	}
+
+	return false, errors.New("Not implemented selector")
+}
+
+func (affiliate Affiliate) query(selectorKey string, selectorValue interface{}) (bool, error) {
+	switch selectorKey {
+	case "docType":
+		return ValidateProperty(selectorValue, string(affiliate.DocType))
+	case "path":
+		return ValidateProperty(selectorValue, string(affiliate.Path))
+	case "parentID":
+		return ValidateProperty(selectorValue, string(affiliate.ParentID))
+	default:
+		return false, errors.New("Wrong selector key")
+	}
+}
+
+func (affiliate Affiliate) order(nextAffiliate Affiliate, orderKey string) (bool, error) {
+	switch orderKey {
+	case "createdAt":
+		return affiliate.CreatedAt < nextAffiliate.CreatedAt, nil
+	default:
+		return false, errors.New("Not implemented order key")
+	}
+
+}
+
+func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInterface, error) {
+	queryObject := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(query), &queryObject); err != nil {
+		mockLogger.Errorf("%+v", err)
+		return nil, err
+	}
+
+	selector := queryObject["selector"].(map[string]interface{})
+
+	filteredElements := list.New()
+
+OUTER:
+	for key, value := range stub.State {
+
+		// Check is affiliate
+		if strings.Contains(key, "eCommerceID~affiliateID") {
+
+			affiliate := Affiliate{}
+			if err := json.Unmarshal(value, &affiliate); err != nil {
+				mockLogger.Errorf("%+v", err)
+				return nil, err
+			}
+
+			for selectorKey, selectorValue := range selector {
+				queryRes, err := affiliate.query(selectorKey, selectorValue)
+				if err != nil {
+					mockLogger.Errorf("%+v", err)
+					return nil, err
+				}
+
+				if !queryRes {
+					continue OUTER
+				}
+			}
+
+			filteredElements.PushBack(map[string]interface{}{
+				"key":   key,
+				"value": value,
+			})
+		}
+	}
+
+	return NewMockStateQueryResultIterator(stub, *filteredElements), nil
+}
+
+func readData(value []byte) Affiliate {
+	affiliate := Affiliate{}
+	if err := json.Unmarshal(value, &affiliate); err != nil {
+		mockLogger.Errorf("%+v", err)
+		return affiliate
+	}
+	return affiliate
+}
+
+func (stub *MockStub) GetQueryResultWithPagination(query string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *pb.QueryResponseMetadata, error) {
+	queryObject := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(query), &queryObject); err != nil {
+		mockLogger.Errorf("%+v", err)
+		return nil, nil, err
+	}
+
+	selector := queryObject["selector"].(map[string]interface{})
+
+	queriedElements := []map[string]interface{}{}
+OUTER:
+	for key, value := range stub.State {
+
+		// Check is affiliate
+		if strings.Contains(key, "eCommerceID~affiliateID") {
+
+			// affiliate := Affiliate{}
+			// if err := json.Unmarshal(value, &affiliate); err != nil {
+			// 	mockLogger.Errorf("%+v", err)
+			// 	return nil, nil, err
+			// }
+
+			affiliate := readData(value)
+
+			for selectorKey, selectorValue := range selector {
+				queryRes, err := affiliate.query(selectorKey, selectorValue)
+				if err != nil {
+					mockLogger.Errorf("%+v", err)
+					return nil, nil, err
+				}
+
+				if !queryRes {
+					continue OUTER
+				}
+			}
+
+			queriedElements = append(queriedElements, map[string]interface{}{
+				"key":   key,
+				"value": value,
+			})
+
+		}
+	}
+
+	sort.Slice(queriedElements, func(i, j int) bool {
+		affiliate1 := readData(queriedElements[i]["value"].([]byte))
+		affiliate2 := readData(queriedElements[j]["value"].([]byte))
+
+		return affiliate1.CreatedAt < affiliate2.CreatedAt
+	})
+
+	filteredElements := list.New()
+	count := 0
+	var newBookmark string
+	foundFirstOnPage := false
+	for index, data := range queriedElements {
+
+		if bookmark == data["key"].(string) {
+			foundFirstOnPage = true
+		}
+
+		if bookmark != "" && !foundFirstOnPage {
+			continue
+		}
+
+		count++
+		filteredElements.PushBack(data)
+
+		if count == int(pageSize) || len(queriedElements)-1 == index {
+			nextIndex := index + 1
+			if len(queriedElements) <= nextIndex {
+				newBookmark = "" // TODO: Check this
+				break
+			}
+			newBookmark = queriedElements[nextIndex]["key"].(string)
+			break
+		}
+	}
+
+	metadata := pb.QueryResponseMetadata{
+		FetchedRecordsCount: int32(count),
+		Bookmark:            newBookmark,
+	}
+
+	return NewMockStateQueryResultIterator(stub, *filteredElements), &metadata, nil
 }
