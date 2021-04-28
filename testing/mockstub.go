@@ -764,6 +764,8 @@ func readData(value []byte) Affiliate {
 }
 
 func (stub *MockStub) GetQueryResultWithPagination(query string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *pb.QueryResponseMetadata, error) {
+	fmt.Println("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa")
+
 	queryObject := map[string]interface{}{}
 	if err := json.Unmarshal([]byte(query), &queryObject); err != nil {
 		mockLogger.Errorf("%+v", err)
