@@ -680,10 +680,13 @@ func GetSortPropertyAndDirection(sortElement interface{}) (string, string) {
 	}
 
 	// Selector property is map
-	selectorValueMap := sortElement.(map[string]string)
+	selectorValueMap := sortElement.(map[string]interface{})
 
 	for sortProperty, sortDirection := range selectorValueMap {
-		return sortProperty, sortDirection
+		if !IsString(sortDirection) {
+			panic("sort object direction is not string")
+		}
+		return sortProperty, sortDirection.(string)
 	}
 
 	panic("Empty map for sort")
