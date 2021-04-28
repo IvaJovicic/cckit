@@ -636,23 +636,6 @@ func (iter *MockStateQueryResultIterator) Next() (*queryresult.KV, error) {
 	return nil, err
 }
 
-// type Affiliate struct {
-// 	AffiliateID string  `json:"affiliateID"`
-// 	CreatedAt   string  `json:"creastedAt"`
-// 	Path        string  `json:"path"`
-// 	ParentID    string  `json:"parentID"`
-// 	DocType     DocType `json:"docType"`
-// }
-
-type AffiliateMock struct {
-	models.Affiliate
-}
-
-type Model interface {
-	query(selectorKey string, selectorValue interface{})
-	order(orderKey string, collection list.List)
-}
-
 func IsString(data interface{}) bool {
 	return reflect.TypeOf(data).Kind() == reflect.String
 }
@@ -684,28 +667,10 @@ func ValidateProperty(selectorValue interface{}, originalValue interface{}) (boo
 	return false, errors.New("Not implemented selector")
 }
 
-func (affiliate AffiliateMock) query(selectorKey string, selectorValue interface{}) (bool, error) {
-	switch selectorKey {
-	case "docType":
-		return ValidateProperty(selectorValue, string(affiliate.DocType))
-	case "path":
-		return ValidateProperty(selectorValue, string(affiliate.Path))
-	case "parentID":
-		return ValidateProperty(selectorValue, string(affiliate.ParentID))
-	default:
-		return false, errors.New("Wrong selector key")
-	}
-}
-
-func (affiliate AffiliateMock) order(nextAffiliate models.Affiliate, orderKey string) (bool, error) {
-	switch orderKey {
-	case "createdAt":
-		return affiliate.CreatedAt < nextAffiliate.CreatedAt, nil
-	default:
-		return false, errors.New("Not implemented order key")
-	}
-
-}
+// type Model interface {
+// 	query(selectorKey string, selectorValue interface{})
+// 	order(orderKey string, collection list.List)
+// }
 
 func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInterface, error) {
 	queryObject := map[string]interface{}{}
@@ -722,90 +687,90 @@ OUTER:
 	for key, value := range stub.State {
 
 		// Check is affiliate
-		if strings.Contains(key, "eCommerceID~affiliateID") {
+		// if strings.Contains(key, "eCommerceID~affiliateID") {
 
-			affiliate := AffiliateMock{}
-			if err := json.Unmarshal(value, &affiliate); err != nil {
+		// affiliate := AffiliateMock{}
+		// if err := json.Unmarshal(value, &affiliate); err != nil {
+		// 	mockLogger.Errorf("%+v", err)
+		// 	return nil, err
+		// }
+
+		for selectorKey, selectorValue := range selector {
+			// queryRes, err := affiliate.query(selectorKey, selectorValue)
+			queryRes, err := QueryData(key, selectorKey, value, selectorValue)
+			if err != nil {
 				mockLogger.Errorf("%+v", err)
 				return nil, err
 			}
 
-			for selectorKey, selectorValue := range selector {
-				queryRes, err := affiliate.query(selectorKey, selectorValue)
-				if err != nil {
-					mockLogger.Errorf("%+v", err)
-					return nil, err
-				}
-
-				if !queryRes {
-					continue OUTER
-				}
+			if !queryRes {
+				continue OUTER
 			}
-
-			filteredElements.PushBack(map[string]interface{}{
-				"key":   key,
-				"value": value,
-			})
 		}
+
+		filteredElements.PushBack(map[string]interface{}{
+			"key":   key,
+			"value": value,
+		})
+		// }
 	}
 
 	return NewMockStateQueryResultIterator(stub, *filteredElements), nil
 }
 
-func readData(value []byte) AffiliateMock {
-	affiliate := AffiliateMock{}
-	if err := json.Unmarshal(value, &affiliate); err != nil {
-		mockLogger.Errorf("%+v", err)
-		return affiliate
-	}
-	return affiliate
-}
-
 func (stub *MockStub) GetQueryResultWithPagination(query string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *pb.QueryResponseMetadata, error) {
 
+	// Read query string as object
 	queryObject := map[string]interface{}{}
 	if err := json.Unmarshal([]byte(query), &queryObject); err != nil {
 		mockLogger.Errorf("%+v", err)
 		return nil, nil, err
 	}
 
+	// Read selector as map
 	selector := queryObject["selector"].(map[string]interface{})
 
+	// First filter state for conditions from selector
 	queriedElements := []map[string]interface{}{}
 OUTER:
 	for key, value := range stub.State {
 
 		// Check is affiliate
-		if strings.Contains(key, "eCommerceID~affiliateID") {
-			affiliate := readData(value)
+		// if strings.Contains(key, "eCommerceID~affiliateID") {
+		// affiliate := readAffiliateData(value)
 
-			for selectorKey, selectorValue := range selector {
-				queryRes, err := affiliate.query(selectorKey, selectorValue)
-				if err != nil {
-					mockLogger.Errorf("%+v", err)
-					return nil, nil, err
-				}
-
-				if !queryRes {
-					continue OUTER
-				}
+		for selectorKey, selectorValue := range selector {
+			// queryRes, err := affiliate.query(selectorKey, selectorValue)
+			queryRes, err := QueryData(key, selectorKey, value, selectorValue)
+			if err != nil {
+				mockLogger.Errorf("%+v", err)
+				return nil, nil, err
 			}
 
-			queriedElements = append(queriedElements, map[string]interface{}{
-				"key":   key,
-				"value": value,
-			})
-
+			if !queryRes {
+				continue OUTER
+			}
 		}
+
+		queriedElements = append(queriedElements, map[string]interface{}{
+			"key":   key,
+			"value": value,
+		})
+
+		// }
 	}
 
-	sort.Slice(queriedElements, func(i, j int) bool {
-		affiliate1 := readData(queriedElements[i]["value"].([]byte))
-		affiliate2 := readData(queriedElements[j]["value"].([]byte))
+	// Sort filtered data
+	// sort.Slice(queriedElements, func(i, j int) bool {
+	// 	affiliate1 := readAffiliateData(queriedElements[i]["value"].([]byte))
+	// 	affiliate2 := readAffiliateData(queriedElements[j]["value"].([]byte))
 
-		return affiliate1.CreatedAt < affiliate2.CreatedAt
-	})
+	// 	return affiliate1.CreatedAt < affiliate2.CreatedAt
+	// })
+	queriedElements = SortData("createdAt", queriedElements)
 
+	// Populate response with sorted, filtered data
+	// Calculate bookmark and count of data for this page
 	filteredElements := list.New()
 	count := 0
 	var newBookmark string
@@ -840,4 +805,79 @@ OUTER:
 	}
 
 	return NewMockStateQueryResultIterator(stub, *filteredElements), &metadata, nil
+}
+
+// ########### MODEL MOCK ###########
+
+type ModelMock interface {
+	query(selectorKey string, selectorValue interface{}) (bool, error)
+	sort(nextObj ModelMock, orderKey string) bool
+}
+
+func CreateModelObject(key string, value []byte) ModelMock {
+	if strings.Contains(key, "eCommerceID~affiliateID") {
+		affiliate := AffiliateMock{}
+		if err := json.Unmarshal(value, &affiliate); err != nil {
+			mockLogger.Errorf("%+v", err)
+			panic("Error reading affiliate data")
+		}
+		return affiliate
+	}
+	panic("Not implemented model object")
+}
+
+func QueryData(stubKey, selectorKey string, stubValue []byte, selectorValue interface{}) (bool, error) {
+	modelObject := CreateModelObject(stubKey, stubValue)
+
+	fmt.Println("modelObject", modelObject)
+
+	return modelObject.query(selectorKey, selectorValue)
+}
+
+func SortData(orderKey string, elementsForSort []map[string]interface{}) []map[string]interface{} {
+
+	sort.Slice(elementsForSort, func(i, j int) bool {
+		obj1 := CreateModelObject(elementsForSort[i]["key"].(string), elementsForSort[i]["value"].([]byte))
+		obj2 := CreateModelObject(elementsForSort[j]["key"].(string), elementsForSort[j]["value"].([]byte))
+
+		return obj1.sort(obj2, orderKey)
+	})
+
+	return elementsForSort
+}
+
+// ########### AFFILIATE MOCK ###########
+
+type AffiliateMock struct {
+	models.Affiliate
+}
+
+// Query different affiliate properties used in affiliate chaincode
+func (affiliate AffiliateMock) query(selectorKey string, selectorValue interface{}) (bool, error) {
+	switch selectorKey {
+	case "docType":
+		return ValidateProperty(selectorValue, string(affiliate.DocType))
+	case "path":
+		return ValidateProperty(selectorValue, string(affiliate.Path))
+	case "parentID":
+		return ValidateProperty(selectorValue, string(affiliate.ParentID))
+	default:
+		return false, errors.New("Wrong selector key")
+	}
+}
+
+// func (affiliate AffiliateMock) readStateData(value []byte) {
+// 	if err := json.Unmarshal(value, &affiliate); err != nil {
+// 		mockLogger.Errorf("%+v", err)
+// 		panic("Error reading affiliate data")
+// 	}
+// }
+
+func (affiliate AffiliateMock) sort(nextObj ModelMock, orderKey string) bool {
+	switch orderKey {
+	case "createdAt":
+		return affiliate.CreatedAt < nextObj.(AffiliateMock).CreatedAt
+	default:
+		panic("Not implemented order key")
+	}
 }
