@@ -887,13 +887,7 @@ func (affiliate AffiliateMock) query(selectorKey string, selectorValue interface
 	}
 }
 
-// func (affiliate AffiliateMock) readStateData(value []byte) {
-// 	if err := json.Unmarshal(value, &affiliate); err != nil {
-// 		mockLogger.Errorf("%+v", err)
-// 		panic("Error reading affiliate data")
-// 	}
-// }
-
+// Sort affiliates by given sort properties
 func (affiliate AffiliateMock) sort(nextObj ModelMock, sortKey, sortDirection string) bool {
 	switch sortKey {
 	case "createdAt":
