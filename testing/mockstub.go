@@ -667,36 +667,24 @@ func ValidateProperty(selectorValue interface{}, originalValue interface{}) (boo
 	return false, errors.New("Not implemented selector")
 }
 
-// type Model interface {
-// 	query(selectorKey string, selectorValue interface{})
-// 	order(orderKey string, collection list.List)
-// }
-
 func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInterface, error) {
+	// Read query string as object
 	queryObject := map[string]interface{}{}
 	if err := json.Unmarshal([]byte(query), &queryObject); err != nil {
 		mockLogger.Errorf("%+v", err)
 		return nil, err
 	}
 
+	// Read selector as map
 	selector := queryObject["selector"].(map[string]interface{})
 
-	filteredElements := list.New()
+	// First filter state for conditions from selector
+	queriedElements := []map[string]interface{}{}
 
 OUTER:
 	for key, value := range stub.State {
 
-		// Check is affiliate
-		// if strings.Contains(key, "eCommerceID~affiliateID") {
-
-		// affiliate := AffiliateMock{}
-		// if err := json.Unmarshal(value, &affiliate); err != nil {
-		// 	mockLogger.Errorf("%+v", err)
-		// 	return nil, err
-		// }
-
 		for selectorKey, selectorValue := range selector {
-			// queryRes, err := affiliate.query(selectorKey, selectorValue)
 			queryRes, err := QueryData(key, selectorKey, value, selectorValue)
 			if err != nil {
 				mockLogger.Errorf("%+v", err)
@@ -708,11 +696,19 @@ OUTER:
 			}
 		}
 
-		filteredElements.PushBack(map[string]interface{}{
+		queriedElements = append(queriedElements, map[string]interface{}{
 			"key":   key,
 			"value": value,
 		})
-		// }
+	}
+
+	// Sort filtered data
+	queriedElements = SortData("createdAt", queriedElements)
+
+	// Populate response with sorted, filtered data
+	filteredElements := list.New()
+	for _, data := range queriedElements {
+		filteredElements.PushBack(data)
 	}
 
 	return NewMockStateQueryResultIterator(stub, *filteredElements), nil
@@ -734,13 +730,7 @@ func (stub *MockStub) GetQueryResultWithPagination(query string, pageSize int32,
 	queriedElements := []map[string]interface{}{}
 OUTER:
 	for key, value := range stub.State {
-
-		// Check is affiliate
-		// if strings.Contains(key, "eCommerceID~affiliateID") {
-		// affiliate := readAffiliateData(value)
-
 		for selectorKey, selectorValue := range selector {
-			// queryRes, err := affiliate.query(selectorKey, selectorValue)
 			queryRes, err := QueryData(key, selectorKey, value, selectorValue)
 			if err != nil {
 				mockLogger.Errorf("%+v", err)
@@ -756,17 +746,9 @@ OUTER:
 			"key":   key,
 			"value": value,
 		})
-
-		// }
 	}
 
 	// Sort filtered data
-	// sort.Slice(queriedElements, func(i, j int) bool {
-	// 	affiliate1 := readAffiliateData(queriedElements[i]["value"].([]byte))
-	// 	affiliate2 := readAffiliateData(queriedElements[j]["value"].([]byte))
-
-	// 	return affiliate1.CreatedAt < affiliate2.CreatedAt
-	// })
 	queriedElements = SortData("createdAt", queriedElements)
 
 	// Populate response with sorted, filtered data
