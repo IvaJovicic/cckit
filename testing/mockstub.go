@@ -671,28 +671,23 @@ func ValidateProperty(selectorValue interface{}, originalValue interface{}) (boo
 	return false, errors.New("Not implemented selector")
 }
 
-// func ValidateSortProperty(sortElement interface{}) (bool, error) {
-// 	if !IsArray(sortElement) {
-// 		// Selector property is NOT array
-// 		panic("Sort ")
-// 	}
+func GetSortPropertyAndDirection(sortElement interface{}) (string, string) {
+	if !IsMap(sortElement) {
+		// Selector property is NOT map
 
-// 	// Selector property is array
-// 	selectorValueMap := sortElement.([]map[string]string)
+		// Default sort direction is ASC
+		return sortElement.(string), "asc"
+	}
 
-// 	// Validate regex selector
-// 	if regexValue, ok := selectorValueMap["$regex"]; ok {
-// 		regex := regexp.MustCompile(regexValue.(string))
-// 		return regex.MatchString(originalValue.(string)), nil
-// 	}
+	// Selector property is map
+	selectorValueMap := sortElement.(map[string]string)
 
-// 	// Validate equals selector
-// 	if equalsValue, ok := selectorValueMap["$eq"]; ok {
-// 		return originalValue == equalsValue, nil
-// 	}
+	for sortProperty, sortDirection := range selectorValueMap {
+		return sortProperty, sortDirection
+	}
 
-// 	return false, errors.New("Not implemented selector")
-// }
+	panic("Empty map for sort")
+}
 
 func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInterface, error) {
 	// Read query string as object
@@ -717,9 +712,7 @@ func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInter
 OUTER:
 	for key, value := range stub.State {
 
-		fmt.Println("key ", key)
 		for selectorKey, selectorValue := range selector {
-			fmt.Println("selectorKey ", selectorKey)
 			queryRes, err := QueryData(key, selectorKey, value, selectorValue)
 			if err != nil {
 				mockLogger.Errorf("%+v", err)
@@ -739,16 +732,8 @@ OUTER:
 
 	// Sort filtered data
 	for _, sortElem := range sortElements {
-		sortElemeBytes, _ := json.Marshal(sortElem)
-		sortProperty := map[string]string{}
-		if err := json.Unmarshal(sortElemeBytes, &sortProperty); err != nil {
-			fmt.Println(err)
-			panic("novi error")
-		}
-		for propertyName, sortDirection := range sortProperty {
-			queriedElements = SortData(propertyName, sortDirection, queriedElements)
-		}
-
+		sortProperty, sortDirection := GetSortPropertyAndDirection(sortElem)
+		queriedElements = SortData(sortProperty, sortDirection, queriedElements)
 	}
 
 	// Populate response with sorted, filtered data
@@ -771,6 +756,12 @@ func (stub *MockStub) GetQueryResultWithPagination(query string, pageSize int32,
 
 	// Read selector as map
 	selector := queryObject["selector"].(map[string]interface{})
+
+	// Read sort as map
+	sortElements := []interface{}{}
+	if queryObject["sort"] != nil {
+		sortElements = queryObject["sort"].([]interface{})
+	}
 
 	// First filter state for conditions from selector
 	queriedElements := []map[string]interface{}{}
@@ -795,8 +786,10 @@ OUTER:
 	}
 
 	// Sort filtered data
-	// TODO: sort
-	// queriedElements = SortData("createdAt", queriedElements)
+	for _, sortElem := range sortElements {
+		sortProperty, sortDirection := GetSortPropertyAndDirection(sortElem)
+		queriedElements = SortData(sortProperty, sortDirection, queriedElements)
+	}
 
 	// Populate response with sorted, filtered data
 	// Calculate bookmark and count of data for this page
@@ -857,14 +850,10 @@ func CreateModelObject(key string, value []byte) ModelMock {
 
 func QueryData(stubKey, selectorKey string, stubValue []byte, selectorValue interface{}) (bool, error) {
 	modelObject := CreateModelObject(stubKey, stubValue)
-
-	fmt.Println("modelObject", modelObject)
-
 	return modelObject.query(selectorKey, selectorValue)
 }
 
 func SortData(sortKey, sortDirection string, elementsForSort []map[string]interface{}) []map[string]interface{} {
-
 	sort.Slice(elementsForSort, func(i, j int) bool {
 		obj1 := CreateModelObject(elementsForSort[i]["key"].(string), elementsForSort[i]["value"].([]byte))
 		obj2 := CreateModelObject(elementsForSort[j]["key"].(string), elementsForSort[j]["value"].([]byte))
