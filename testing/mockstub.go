@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/IvaJovicic/slaff-libs/models"
 	"github.com/hyperledger/fabric-chaincode-go/shim"
 	"github.com/hyperledger/fabric-chaincode-go/shimtest"
 	"github.com/hyperledger/fabric-protos-go/ledger/queryresult"
@@ -635,19 +636,16 @@ func (iter *MockStateQueryResultIterator) Next() (*queryresult.KV, error) {
 	return nil, err
 }
 
-// Affiliate
-type DocType string
+// type Affiliate struct {
+// 	AffiliateID string  `json:"affiliateID"`
+// 	CreatedAt   string  `json:"creastedAt"`
+// 	Path        string  `json:"path"`
+// 	ParentID    string  `json:"parentID"`
+// 	DocType     DocType `json:"docType"`
+// }
 
-const (
-	AFFILIATE DocType = "Affiliate"
-)
-
-type Affiliate struct {
-	AffiliateID string  `json:"affiliateID"`
-	CreatedAt   string  `json:"creastedAt"`
-	Path        string  `json:"path"`
-	ParentID    string  `json:"parentID"`
-	DocType     DocType `json:"docType"`
+type AffiliateMock struct {
+	models.Affiliate
 }
 
 type Model interface {
@@ -686,7 +684,7 @@ func ValidateProperty(selectorValue interface{}, originalValue interface{}) (boo
 	return false, errors.New("Not implemented selector")
 }
 
-func (affiliate Affiliate) query(selectorKey string, selectorValue interface{}) (bool, error) {
+func (affiliate AffiliateMock) query(selectorKey string, selectorValue interface{}) (bool, error) {
 	switch selectorKey {
 	case "docType":
 		return ValidateProperty(selectorValue, string(affiliate.DocType))
@@ -699,7 +697,7 @@ func (affiliate Affiliate) query(selectorKey string, selectorValue interface{}) 
 	}
 }
 
-func (affiliate Affiliate) order(nextAffiliate Affiliate, orderKey string) (bool, error) {
+func (affiliate AffiliateMock) order(nextAffiliate models.Affiliate, orderKey string) (bool, error) {
 	switch orderKey {
 	case "createdAt":
 		return affiliate.CreatedAt < nextAffiliate.CreatedAt, nil
@@ -726,7 +724,7 @@ OUTER:
 		// Check is affiliate
 		if strings.Contains(key, "eCommerceID~affiliateID") {
 
-			affiliate := Affiliate{}
+			affiliate := AffiliateMock{}
 			if err := json.Unmarshal(value, &affiliate); err != nil {
 				mockLogger.Errorf("%+v", err)
 				return nil, err
@@ -754,8 +752,8 @@ OUTER:
 	return NewMockStateQueryResultIterator(stub, *filteredElements), nil
 }
 
-func readData(value []byte) Affiliate {
-	affiliate := Affiliate{}
+func readData(value []byte) AffiliateMock {
+	affiliate := AffiliateMock{}
 	if err := json.Unmarshal(value, &affiliate); err != nil {
 		mockLogger.Errorf("%+v", err)
 		return affiliate
@@ -764,7 +762,6 @@ func readData(value []byte) Affiliate {
 }
 
 func (stub *MockStub) GetQueryResultWithPagination(query string, pageSize int32, bookmark string) (shim.StateQueryIteratorInterface, *pb.QueryResponseMetadata, error) {
-	fmt.Println("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa")
 
 	queryObject := map[string]interface{}{}
 	if err := json.Unmarshal([]byte(query), &queryObject); err != nil {
@@ -780,13 +777,6 @@ OUTER:
 
 		// Check is affiliate
 		if strings.Contains(key, "eCommerceID~affiliateID") {
-
-			// affiliate := Affiliate{}
-			// if err := json.Unmarshal(value, &affiliate); err != nil {
-			// 	mockLogger.Errorf("%+v", err)
-			// 	return nil, nil, err
-			// }
-
 			affiliate := readData(value)
 
 			for selectorKey, selectorValue := range selector {

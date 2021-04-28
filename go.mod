@@ -3,13 +3,14 @@ module github.com/s7techlab/cckit
 go 1.13
 
 require (
+	github.com/IvaJovicic/slaff-libs v0.0.0-20210428194505-2de71e16fd8b // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/protobuf v1.4.3
 	github.com/grpc-ecosystem/grpc-gateway v1.11.1
 	github.com/hyperledger/fabric v1.4.0-rc1.0.20200930182727-344fda602252
-	github.com/hyperledger/fabric-chaincode-go v0.0.0-20201119163726-f8ef75b17719
-	github.com/hyperledger/fabric-protos-go v0.0.0-20201028172056-a3136dde2354
+	github.com/hyperledger/fabric-chaincode-go v0.0.0-20210319203922-6b661064d4d9
+	github.com/hyperledger/fabric-protos-go v0.0.0-20210318103044-13fdee960194
 	github.com/mwitkow/go-proto-validators v0.3.2
 	github.com/onsi/ginkgo v1.8.0
 	github.com/onsi/gomega v1.9.0
@@ -24,4 +25,4 @@ require (
 	google.golang.org/protobuf v1.25.0
 )
 
-replace github.com/s7techlab/cckit => github.com/IvaJovicic/cckit v1.0.0
+replace github.com/s7techlab/cckit => github.com/IvaJovicic/cckit v1.0.1
