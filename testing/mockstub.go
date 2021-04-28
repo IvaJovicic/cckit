@@ -644,6 +644,10 @@ func IsMap(data interface{}) bool {
 	return reflect.TypeOf(data).Kind() == reflect.Map
 }
 
+func IsArray(data interface{}) bool {
+	return reflect.TypeOf(data).Kind() == reflect.Array
+}
+
 func ValidateProperty(selectorValue interface{}, originalValue interface{}) (bool, error) {
 	if !IsMap(selectorValue) {
 		// Selector property is NOT object
@@ -667,6 +671,29 @@ func ValidateProperty(selectorValue interface{}, originalValue interface{}) (boo
 	return false, errors.New("Not implemented selector")
 }
 
+// func ValidateSortProperty(sortElement interface{}) (bool, error) {
+// 	if !IsArray(sortElement) {
+// 		// Selector property is NOT array
+// 		panic("Sort ")
+// 	}
+
+// 	// Selector property is array
+// 	selectorValueMap := sortElement.([]map[string]string)
+
+// 	// Validate regex selector
+// 	if regexValue, ok := selectorValueMap["$regex"]; ok {
+// 		regex := regexp.MustCompile(regexValue.(string))
+// 		return regex.MatchString(originalValue.(string)), nil
+// 	}
+
+// 	// Validate equals selector
+// 	if equalsValue, ok := selectorValueMap["$eq"]; ok {
+// 		return originalValue == equalsValue, nil
+// 	}
+
+// 	return false, errors.New("Not implemented selector")
+// }
+
 func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInterface, error) {
 	// Read query string as object
 	queryObject := map[string]interface{}{}
@@ -678,13 +705,18 @@ func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInter
 	// Read selector as map
 	selector := queryObject["selector"].(map[string]interface{})
 
+	// Read sort as map
+	sortElements := queryObject["sort"].([]interface{})
+
 	// First filter state for conditions from selector
 	queriedElements := []map[string]interface{}{}
 
 OUTER:
 	for key, value := range stub.State {
 
+		fmt.Println("key ", key)
 		for selectorKey, selectorValue := range selector {
+			fmt.Println("selectorKey ", selectorKey)
 			queryRes, err := QueryData(key, selectorKey, value, selectorValue)
 			if err != nil {
 				mockLogger.Errorf("%+v", err)
@@ -703,7 +735,18 @@ OUTER:
 	}
 
 	// Sort filtered data
-	queriedElements = SortData("createdAt", queriedElements)
+	for _, sortElem := range sortElements {
+		sortElemeBytes, _ := json.Marshal(sortElem)
+		sortProperty := map[string]string{}
+		if err := json.Unmarshal(sortElemeBytes, &sortProperty); err != nil {
+			fmt.Println(err)
+			panic("novi error")
+		}
+		for propertyName, sortDirection := range sortProperty {
+			queriedElements = SortData(propertyName, sortDirection, queriedElements)
+		}
+
+	}
 
 	// Populate response with sorted, filtered data
 	filteredElements := list.New()
@@ -749,7 +792,8 @@ OUTER:
 	}
 
 	// Sort filtered data
-	queriedElements = SortData("createdAt", queriedElements)
+	// TODO: sort
+	// queriedElements = SortData("createdAt", queriedElements)
 
 	// Populate response with sorted, filtered data
 	// Calculate bookmark and count of data for this page
@@ -793,7 +837,7 @@ OUTER:
 
 type ModelMock interface {
 	query(selectorKey string, selectorValue interface{}) (bool, error)
-	sort(nextObj ModelMock, orderKey string) bool
+	sort(nextObj ModelMock, sortKey, sortDirection string) bool
 }
 
 func CreateModelObject(key string, value []byte) ModelMock {
@@ -816,13 +860,13 @@ func QueryData(stubKey, selectorKey string, stubValue []byte, selectorValue inte
 	return modelObject.query(selectorKey, selectorValue)
 }
 
-func SortData(orderKey string, elementsForSort []map[string]interface{}) []map[string]interface{} {
+func SortData(sortKey, sortDirection string, elementsForSort []map[string]interface{}) []map[string]interface{} {
 
 	sort.Slice(elementsForSort, func(i, j int) bool {
 		obj1 := CreateModelObject(elementsForSort[i]["key"].(string), elementsForSort[i]["value"].([]byte))
 		obj2 := CreateModelObject(elementsForSort[j]["key"].(string), elementsForSort[j]["value"].([]byte))
 
-		return obj1.sort(obj2, orderKey)
+		return obj1.sort(obj2, sortKey, sortDirection)
 	})
 
 	return elementsForSort
@@ -855,11 +899,21 @@ func (affiliate AffiliateMock) query(selectorKey string, selectorValue interface
 // 	}
 // }
 
-func (affiliate AffiliateMock) sort(nextObj ModelMock, orderKey string) bool {
-	switch orderKey {
+func (affiliate AffiliateMock) sort(nextObj ModelMock, sortKey, sortDirection string) bool {
+	switch sortKey {
 	case "createdAt":
-		return affiliate.CreatedAt < nextObj.(AffiliateMock).CreatedAt
+		if sortDirection == "asc" {
+			return affiliate.CreatedAt < nextObj.(AffiliateMock).CreatedAt
+		} else {
+			return affiliate.CreatedAt > nextObj.(AffiliateMock).CreatedAt
+		}
+	case "level":
+		if sortDirection == "asc" {
+			return affiliate.Level < nextObj.(AffiliateMock).Level
+		} else {
+			return affiliate.Level > nextObj.(AffiliateMock).Level
+		}
 	default:
-		panic("Not implemented order key")
+		panic("Not implemented sort key")
 	}
 }
