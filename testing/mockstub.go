@@ -706,7 +706,10 @@ func (stub *MockStub) GetQueryResult(query string) (shim.StateQueryIteratorInter
 	selector := queryObject["selector"].(map[string]interface{})
 
 	// Read sort as map
-	sortElements := queryObject["sort"].([]interface{})
+	sortElements := []interface{}{}
+	if queryObject["sort"] != nil {
+		sortElements = queryObject["sort"].([]interface{})
+	}
 
 	// First filter state for conditions from selector
 	queriedElements := []map[string]interface{}{}
